@@ -1,0 +1,22 @@
+[Unit]
+Description=SmartTrader-AI Strategy Learner
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/smarttrader
+Environment=PATH=/opt/smarttrader/venv/bin
+ExecStart=/opt/smarttrader/venv/bin/python strategy_learner.py --mode auto
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+# Auto-restart if it crashes
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

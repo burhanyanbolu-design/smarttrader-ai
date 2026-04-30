@@ -1,0 +1,42 @@
+{
+  "alpaca": {
+    "api_key": "YOUR_API_KEY_HERE",
+    "secret_key": "YOUR_SECRET_KEY_HERE",
+    "paper_trading": true,
+    "base_url": "https://paper-api.alpaca.markets"
+  },
+  "trading": {
+    "symbols": ["AAPL", "TSLA", "MSFT", "NVDA", "SPY", "QQQ", "AMZN", "GOOGL"],
+    "timeframe": "5Min",
+    "max_positions": 5,
+    "risk_per_trade": 0.02,
+    "max_daily_loss": 0.05,
+    "take_profit_pct": 0.03,
+    "stop_loss_pct": 0.015
+  },
+  "strategy": {
+    "scan_interval_minutes": 30,
+    "backtest_days": 60,
+    "min_win_rate": 0.55,
+    "min_profit_factor": 1.5,
+    "min_trades_required": 20
+  },
+  "market": {
+    "trend_ema_fast": 9,
+    "trend_ema_slow": 21,
+    "rsi_period": 14,
+    "rsi_overbought": 70,
+    "rsi_oversold": 30,
+    "macd_fast": 12,
+    "macd_slow": 26,
+    "macd_signal": 9,
+    "bb_period": 20,
+    "bb_std": 2,
+    "atr_period": 14,
+    "volume_ma_period": 20
+  },
+  "dashboard": {
+    "refresh_seconds": 5,
+    "show_charts": true
+  }
+}
