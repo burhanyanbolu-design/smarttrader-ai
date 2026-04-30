@@ -1,0 +1,196 @@
+"""
+SmartTrader-AI Web Dashboard
+Live view of strategy learner — runs on port 5000
+Access via: http://YOUR_SERVER_IP:5000
+"""
+
+import os
+import json
+from datetime import datetime
+from flask import Flask, render_template_string
+from dotenv import load_dotenv
+
+load_dotenv()
+
+app = Flask(__name__)
+
+BEST_FILE       = "data/best_strategies.json"
+STRATEGIES_FILE = "data/discovered_strategies.json"
+SCORES_FILE     = "data/strategy_scores.json"
+LOG_FILE        = "logs/learner.log"
+
+def _load(path, default):
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+def get_last_logs(n=50):
+    try:
+        with open(LOG_FILE) as f:
+            lines = f.readlines()
+        return [l.strip() for l in lines[-n:]][::-1]
+    except Exception:
+        return ["No logs yet..."]
+
+TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SmartTrader-AI Dashboard</title>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="30">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#0d0d0d; color:#e8e8e8; font-family:'Courier New',monospace; }
+    .header { background:#111; padding:20px 30px; border-bottom:2px solid #00ff88; display:flex; justify-content:space-between; align-items:center; }
+    .header h1 { color:#00ff88; font-size:22px; }
+    .header .time { color:#666; font-size:12px; }
+    .grid { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; padding:20px 30px; }
+    .card { background:#161616; border:1px solid #222; border-radius:8px; padding:20px; }
+    .card .label { color:#666; font-size:11px; margin-bottom:8px; }
+    .card .value { font-size:28px; font-weight:bold; color:#00ff88; }
+    .card .value.red { color:#ff4455; }
+    .card .value.yellow { color:#ffaa00; }
+    .card .value.blue { color:#00ccff; }
+    .section { padding:0 30px 20px; }
+    .section h2 { color:#00ff88; font-size:14px; margin-bottom:12px; padding-bottom:6px; border-bottom:1px solid #222; }
+    .strategy { background:#161616; border:1px solid #222; border-radius:6px; padding:16px; margin-bottom:10px; }
+    .strategy .name { color:#00ccff; font-size:14px; font-weight:bold; margin-bottom:8px; }
+    .strategy .meta { display:flex; gap:20px; flex-wrap:wrap; }
+    .strategy .badge { background:#222; padding:4px 10px; border-radius:4px; font-size:11px; }
+    .strategy .badge.green { color:#00ff88; }
+    .strategy .badge.yellow { color:#ffaa00; }
+    .strategy .badge.red { color:#ff4455; }
+    .strategy .badge.blue { color:#00ccff; }
+    .strategy .indicators { color:#666; font-size:11px; margin-top:8px; }
+    .strategy .source { color:#444; font-size:10px; margin-top:6px; }
+    .logs { background:#0a0a0a; border:1px solid #222; border-radius:6px; padding:16px; height:300px; overflow-y:auto; }
+    .log-line { font-size:11px; padding:2px 0; border-bottom:1px solid #111; }
+    .log-line.warn { color:#ffaa00; }
+    .log-line.error { color:#ff4455; }
+    .log-line.info { color:#00ccff; }
+    .log-line.success { color:#00ff88; }
+    .empty { color:#444; text-align:center; padding:40px; }
+    .status-dot { display:inline-block; width:8px; height:8px; border-radius:50%; background:#00ff88; margin-right:8px; animation:pulse 2s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .refresh { color:#444; font-size:11px; text-align:center; padding:10px; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <h1>🎯 SmartTrader-AI <span style="color:#666;font-size:14px;">Strategy Learner</span></h1>
+  <div>
+    <span class="status-dot"></span>
+    <span style="color:#00ff88;font-size:12px;">RUNNING</span>
+    <span class="time" style="margin-left:20px;">{{ now }}</span>
+  </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="grid">
+  <div class="card">
+    <div class="label">STRATEGIES DISCOVERED</div>
+    <div class="value">{{ stats.total }}</div>
+  </div>
+  <div class="card">
+    <div class="label">HIGH QUALITY (60+)</div>
+    <div class="value blue">{{ stats.high_quality }}</div>
+  </div>
+  <div class="card">
+    <div class="label">BEST SCORE</div>
+    <div class="value {% if stats.best_score >= 70 %}green{% elif stats.best_score >= 50 %}yellow{% else %}red{% endif %}">
+      {{ stats.best_score }}
+    </div>
+  </div>
+  <div class="card">
+    <div class="label">AVG SCORE</div>
+    <div class="value yellow">{{ stats.avg_score }}</div>
+  </div>
+</div>
+
+<!-- Best Strategies -->
+<div class="section">
+  <h2>🏆 BEST STRATEGIES FOUND</h2>
+  {% if best %}
+    {% for s in best %}
+    <div class="strategy">
+      <div class="name">{{ loop.index }}. {{ s.strategy.strategy_name or 'Unknown Strategy' }}</div>
+      <div class="meta">
+        <span class="badge {% if s.score >= 70 %}green{% elif s.score >= 50 %}yellow{% else %}red{% endif %}">
+          Score: {{ s.score }}
+        </span>
+        <span class="badge {% if s.backtest.win_rate >= 60 %}green{% elif s.backtest.win_rate >= 50 %}yellow{% else %}red{% endif %}">
+          Win Rate: {{ s.backtest.win_rate }}%
+        </span>
+        <span class="badge {% if s.backtest.profit_factor >= 1.5 %}green{% elif s.backtest.profit_factor >= 1.0 %}yellow{% else %}red{% endif %}">
+          Profit Factor: {{ s.backtest.profit_factor }}
+        </span>
+        <span class="badge blue">Trades: {{ s.backtest.total_trades }}</span>
+        <span class="badge">{{ s.strategy.timeframe or '?' }}</span>
+      </div>
+      <div class="indicators">
+        Indicators: {{ s.strategy.indicators | join(', ') if s.strategy.indicators else 'N/A' }}
+      </div>
+      <div class="source">Source: {{ s.strategy.source or 'unknown' }} | Added: {{ s.added_at[:16] if s.added_at else '?' }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="empty">No strategies discovered yet — bot is still learning...</div>
+  {% endif %}
+</div>
+
+<!-- Live Logs -->
+<div class="section">
+  <h2>📋 LIVE LOGS</h2>
+  <div class="logs">
+    {% for line in logs %}
+      <div class="log-line
+        {% if 'ERROR' in line or 'error' in line %}error
+        {% elif 'WARNING' in line or 'warn' in line %}warn
+        {% elif 'Saved' in line or 'Exported' in line or 'SUCCESS' in line %}success
+        {% else %}info{% endif %}">
+        {{ line }}
+      </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="refresh">Auto-refreshes every 30 seconds</div>
+
+</body>
+</html>
+"""
+
+@app.route("/")
+def index():
+    best_data = _load(BEST_FILE, {"strategies": []})
+    best      = best_data.get("strategies", [])[:10]
+
+    all_scores = _load(SCORES_FILE, {})
+    total      = len(_load(STRATEGIES_FILE, {}))
+    high       = sum(1 for s in all_scores.values() if s >= 60)
+    avg        = round(sum(all_scores.values()) / max(total, 1), 1) if all_scores else 0
+    best_score = max(all_scores.values()) if all_scores else 0
+
+    logs = get_last_logs(60)
+    now  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    stats = {
+        "total":        total,
+        "high_quality": high,
+        "avg_score":    avg,
+        "best_score":   best_score,
+    }
+
+    return render_template_string(TEMPLATE, best=best, stats=stats, logs=logs, now=now)
+
+
+if __name__ == "__main__":
+    port = int(os.getenv("DASHBOARD_PORT", 5000))
+    print(f"\n✅ Dashboard running at http://0.0.0.0:{port}")
+    print(f"   Access via: http://35.177.54.44:{port}\n")
+    app.run(host="0.0.0.0", port=port, debug=False)

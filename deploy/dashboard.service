@@ -1,0 +1,15 @@
+[Unit]
+Description=SmartTrader-AI Web Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/smarttrader
+Environment=PATH=/opt/smarttrader/venv/bin
+ExecStart=/opt/smarttrader/venv/bin/python dashboard.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
