@@ -1,6 +1,6 @@
 """
 SmartTrader-AI Web Dashboard
-Live view of strategy learner — runs on port 5000
+Live view of strategy learner + Alpaca trading account
 Access via: http://YOUR_SERVER_IP:5000
 """
 
@@ -13,6 +13,82 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
+
+# ── Alpaca account data ───────────────────────────────────────────────────────
+
+def get_alpaca_data():
+    try:
+        from alpaca.trading.client import TradingClient
+        api_key    = os.getenv("ALPACA_API_KEY", "")
+        secret_key = os.getenv("ALPACA_SECRET_KEY", "")
+        base_url   = os.getenv("ALPACA_BASE_URL", "https://paper-api.alpaca.markets")
+        paper      = "paper" in base_url
+
+        if not api_key or not secret_key:
+            return None
+
+        client  = TradingClient(api_key, secret_key, paper=paper)
+        account = client.get_account()
+
+        equity      = float(account.equity)
+        last_equity = float(account.last_equity)
+        cash        = float(account.cash)
+        pnl         = equity - last_equity
+        pnl_pct     = (pnl / last_equity * 100) if last_equity else 0
+        buying_pw   = float(account.buying_power)
+
+        # Open positions
+        positions = []
+        for p in client.get_all_positions():
+            positions.append({
+                "symbol":  p.symbol,
+                "qty":     p.qty,
+                "entry":   round(float(p.avg_entry_price), 2),
+                "current": round(float(p.current_price), 2),
+                "pl":      round(float(p.unrealized_pl), 2),
+                "pl_pct":  round(float(p.unrealized_plpc) * 100, 2),
+            })
+
+        # Recent orders from trade log
+        trades = []
+        try:
+            with open("trade_log.jsonl") as f:
+                lines = f.readlines()
+            for line in lines[-20:][::-1]:
+                trades.append(json.loads(line.strip()))
+        except Exception:
+            pass
+
+        # Win/loss stats from trade log
+        all_trades = []
+        try:
+            with open("trade_log.jsonl") as f:
+                for line in f:
+                    t = json.loads(line.strip())
+                    if t.get("pnl") is not None:
+                        all_trades.append(t)
+        except Exception:
+            pass
+
+        wins   = sum(1 for t in all_trades if t.get("pnl", 0) > 0)
+        losses = sum(1 for t in all_trades if t.get("pnl", 0) < 0)
+        total_pnl = sum(t.get("pnl", 0) for t in all_trades)
+
+        return {
+            "equity":      round(equity, 2),
+            "cash":        round(cash, 2),
+            "pnl":         round(pnl, 2),
+            "pnl_pct":     round(pnl_pct, 2),
+            "buying_pw":   round(buying_pw, 2),
+            "positions":   positions,
+            "trades":      trades[:10],
+            "wins":        wins,
+            "losses":      losses,
+            "total_pnl":   round(total_pnl, 2),
+            "mode":        "PAPER" if paper else "LIVE",
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 BEST_FILE       = "data/best_strategies.json"
 STRATEGIES_FILE = "data/discovered_strategies.json"
