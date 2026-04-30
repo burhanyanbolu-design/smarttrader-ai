@@ -71,20 +71,22 @@ def _hash(text):
 SUBREDDITS = [
     "Daytrading", "stocks", "StockMarket", "algotrading",
     "investing", "wallstreetbets", "Forex", "options",
-    "technicalanalysis", "Trading"
+    "technicalanalysis", "Trading", "Daytrading", "Scalping",
+    "SwingTrading", "RobinHood", "thinkorswim"
 ]
 
 STRATEGY_KEYWORDS = [
     "strategy", "indicator", "signal", "entry", "exit",
     "RSI", "MACD", "EMA", "backtest", "setup", "pattern",
-    "profitable", "win rate", "system", "method"
+    "profitable", "win rate", "system", "method", "scalp",
+    "swing", "breakout", "reversal", "momentum", "confluence"
 ]
 
 def scrape_reddit() -> list:
     posts   = []
     headers = {"User-Agent": "SmartTrader-AI/1.0"}
     for sub in SUBREDDITS:
-        for sort in ["hot", "top"]:
+        for sort in ["hot", "top", "new"]:
             try:
                 url = f"https://www.reddit.com/r/{sub}/{sort}.json?limit=25&t=week"
                 r   = requests.get(url, headers=headers, timeout=10)
@@ -98,12 +100,12 @@ def scrape_reddit() -> list:
                     text  = (title + " " + body).lower()
                     if not any(k.lower() in text for k in STRATEGY_KEYWORDS):
                         continue
-                    if score < 10:
+                    if score < 5:
                         continue
                     posts.append({
                         "source":  f"reddit/r/{sub}",
                         "title":   title,
-                        "content": body[:2000],
+                        "content": body[:3000],
                         "score":   score,
                         "url":     f"https://reddit.com{p.get('permalink', '')}",
                         "id":      _hash(title + body[:100]),
@@ -114,66 +116,135 @@ def scrape_reddit() -> list:
     log.info(f"Reddit: {len(posts)} strategy posts found")
     return posts
 
-# ── Source 2: Financial News ──────────────────────────────────────────────────
+# ── Source 2: YouTube (via DuckDuckGo search) ─────────────────────────────────
 
-SEARCH_TERMS = [
-    "day trading strategy 2025",
-    "best stock trading strategy backtest",
-    "RSI MACD EMA trading strategy",
-    "momentum breakout trading strategy",
-    "VWAP opening range breakout strategy",
+YOUTUBE_QUERIES = [
+    "site:youtube.com day trading strategy 2025 stocks",
+    "site:youtube.com RSI MACD trading strategy tutorial",
+    "site:youtube.com EMA crossover strategy stocks",
+    "site:youtube.com VWAP trading strategy explained",
+    "site:youtube.com momentum breakout trading strategy",
+    "site:youtube.com scalping strategy stocks 2025",
+    "site:youtube.com swing trading strategy tutorial",
+    "site:youtube.com best trading strategy backtest",
+    "site:youtube.com opening range breakout strategy",
+    "site:youtube.com price action trading strategy",
 ]
 
-def scrape_news() -> list:
-    if not NEWS_API_KEY:
-        log.warning("NEWS_API_KEY not set — skipping news scrape")
-        return []
-    articles = []
-    for term in SEARCH_TERMS:
+def scrape_youtube() -> list:
+    results = []
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+    for query in YOUTUBE_QUERIES:
         try:
             r = requests.get(
-                "https://newsapi.org/v2/everything",
-                params={"q": term, "language": "en", "sortBy": "relevancy",
-                        "pageSize": 10, "apiKey": NEWS_API_KEY},
+                "https://api.duckduckgo.com/",
+                params={"q": query, "format": "json", "no_html": 1, "no_redirect": 1},
+                headers=headers,
                 timeout=10,
             )
-            for a in r.json().get("articles", []):
-                title   = a.get("title", "")
-                content = a.get("description", "") or a.get("content", "")
-                if not title or "[Removed]" in title:
-                    continue
-                articles.append({
-                    "source":  a.get("source", {}).get("name", "news"),
-                    "title":   title,
-                    "content": content[:2000],
-                    "score":   50,
-                    "url":     a.get("url", ""),
-                    "id":      _hash(title),
+            data = r.json()
+            # Abstract result
+            abstract = data.get("Abstract", "")
+            if abstract and len(abstract) > 50:
+                results.append({
+                    "source":  "youtube",
+                    "title":   data.get("Heading", query),
+                    "content": abstract[:2000],
+                    "score":   60,
+                    "url":     data.get("AbstractURL", ""),
+                    "id":      _hash(abstract[:100]),
                 })
-            time.sleep(0.5)
+            # Related topics
+            for item in data.get("RelatedTopics", [])[:8]:
+                text = item.get("Text", "")
+                url  = item.get("FirstURL", "")
+                if text and len(text) > 50 and any(k.lower() in text.lower() for k in STRATEGY_KEYWORDS):
+                    results.append({
+                        "source":  "youtube",
+                        "title":   text[:200],
+                        "content": text[:1000],
+                        "score":   40,
+                        "url":     url,
+                        "id":      _hash(text[:100]),
+                    })
+            time.sleep(1.5)
         except Exception as e:
-            log.warning(f"News scrape error: {e}")
-    log.info(f"News: {len(articles)} articles found")
-    return articles
+            log.warning(f"YouTube search error: {e}")
+    log.info(f"YouTube: {len(results)} results found")
+    return results
 
-# ── Source 3: DuckDuckGo web search ──────────────────────────────────────────
+# ── Source 3: Trading forums & blogs via web search ───────────────────────────
 
 WEB_QUERIES = [
-    "best day trading strategy 2025 stocks",
-    "RSI MACD crossover strategy tutorial",
-    "EMA 9 21 trading strategy",
-    "VWAP trading strategy explained",
-    "momentum trading strategy stocks tutorial",
+    "tradingview.com strategy RSI MACD EMA profitable 2025",
+    "babypips.com trading strategy tutorial",
+    "investopedia.com day trading strategy",
+    "stockcharts.com trading strategy setup",
+    "site:tradingview.com script strategy backtest results",
+    "reddit.com algotrading strategy python backtest",
+    "best RSI strategy stocks win rate backtest 2025",
+    "EMA 9 21 crossover strategy backtest results",
+    "VWAP anchored strategy stocks tutorial 2025",
+    "price action strategy stocks no indicators 2025",
 ]
 
 def scrape_web() -> list:
     results = []
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     for query in WEB_QUERIES:
         try:
             r = requests.get(
                 "https://api.duckduckgo.com/",
-                params={"q": query, "format": "json", "no_html": 1},
+                params={"q": query, "format": "json", "no_html": 1, "no_redirect": 1},
+                headers=headers,
+                timeout=10,
+            )
+            data = r.json()
+            abstract = data.get("Abstract", "")
+            if abstract and len(abstract) > 50:
+                results.append({
+                    "source":  "web",
+                    "title":   data.get("Heading", query),
+                    "content": abstract[:2000],
+                    "score":   50,
+                    "url":     data.get("AbstractURL", ""),
+                    "id":      _hash(abstract[:100]),
+                })
+            for item in data.get("RelatedTopics", [])[:6]:
+                text = item.get("Text", "")
+                url  = item.get("FirstURL", "")
+                if text and len(text) > 50 and any(k.lower() in text.lower() for k in STRATEGY_KEYWORDS):
+                    results.append({
+                        "source":  "web",
+                        "title":   text[:200],
+                        "content": text[:1000],
+                        "score":   35,
+                        "url":     url,
+                        "id":      _hash(text[:100]),
+                    })
+            time.sleep(1.5)
+        except Exception as e:
+            log.warning(f"Web search error: {e}")
+    log.info(f"Web: {len(results)} results found")
+    return results
+
+# ── Source 4: TradingView public scripts ──────────────────────────────────────
+
+def scrape_tradingview() -> list:
+    """Scrape TradingView public strategy scripts"""
+    results = []
+    headers = {"User-Agent": "Mozilla/5.0"}
+    queries = [
+        "RSI strategy profitable",
+        "MACD EMA crossover strategy",
+        "VWAP momentum strategy",
+        "breakout strategy backtest",
+    ]
+    for q in queries:
+        try:
+            r = requests.get(
+                "https://api.duckduckgo.com/",
+                params={"q": f"site:tradingview.com/script {q}", "format": "json", "no_html": 1},
                 headers=headers,
                 timeout=10,
             )
@@ -181,19 +252,19 @@ def scrape_web() -> list:
             for item in data.get("RelatedTopics", [])[:5]:
                 text = item.get("Text", "")
                 url  = item.get("FirstURL", "")
-                if text and len(text) > 50:
+                if "tradingview" in url.lower() and text:
                     results.append({
-                        "source":  "web",
+                        "source":  "tradingview",
                         "title":   text[:200],
                         "content": text[:1000],
-                        "score":   30,
+                        "score":   70,
                         "url":     url,
                         "id":      _hash(text[:100]),
                     })
             time.sleep(1)
         except Exception as e:
-            log.warning(f"Web search error: {e}")
-    log.info(f"Web: {len(results)} results found")
+            log.warning(f"TradingView search error: {e}")
+    log.info(f"TradingView: {len(results)} results found")
     return results
 
 # ── GPT-4o Strategy Extractor ─────────────────────────────────────────────────
@@ -313,12 +384,17 @@ def backtest(code: str) -> dict:
         all_results = []
         for symbol in symbols:
             try:
-                df = yf.download(symbol, period="90d", interval="1d",
-                                 progress=False, auto_adjust=True)
-                if df.empty or len(df) < 30:
+                # Use requests directly to avoid yfinance JSON issues
+                ticker = yf.Ticker(symbol)
+                df = ticker.history(period="90d", interval="1d")
+                if df is None or df.empty or len(df) < 30:
                     continue
                 df.columns = [c.lower() for c in df.columns]
-                df = df[["open", "high", "low", "close", "volume"]].copy()
+                # Keep only needed columns
+                available = [c for c in ["open", "high", "low", "close", "volume"] if c in df.columns]
+                df = df[available].copy()
+                if "close" not in df.columns:
+                    continue
 
                 trades, position = [], None
                 for i in range(30, len(df)):
@@ -350,6 +426,7 @@ def backtest(code: str) -> dict:
                         "profit_factor": pf,
                         "total_pnl":     sum(t["pnl"] for t in trades),
                     })
+                time.sleep(0.5)  # avoid rate limiting
             except Exception as e:
                 log.warning(f"Backtest {symbol}: {e}")
 
@@ -457,8 +534,9 @@ class StrategyLearner:
     def scrape_all(self):
         content = []
         content.extend(scrape_reddit())
-        content.extend(scrape_news())
+        content.extend(scrape_youtube())
         content.extend(scrape_web())
+        content.extend(scrape_tradingview())
         new = [c for c in content if not self.memory.seen_before(c["id"])]
         log.info(f"Total new items: {len(new)} / {len(content)}")
         return new
