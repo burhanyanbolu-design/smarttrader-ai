@@ -43,7 +43,7 @@ log = logging.getLogger("strategy_learner")
 # ── Config from environment ───────────────────────────────────────────────────
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 NEWS_API_KEY   = os.getenv("NEWS_API_KEY", "")
-SCAN_INTERVAL  = int(os.getenv("SCAN_INTERVAL_MINUTES", "30"))
+SCAN_INTERVAL  = int(os.getenv("SCAN_INTERVAL_MINUTES", "15"))
 
 STRATEGIES_FILE = "data/discovered_strategies.json"
 SCORES_FILE     = "data/strategy_scores.json"
