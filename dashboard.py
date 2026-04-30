@@ -382,7 +382,8 @@ def status_report():
         logs=logs)
 
 
-
+@app.route("/")
+def index():
     best_data = _load(BEST_FILE, {"strategies": []})
     best      = best_data.get("strategies", [])[:10]
 
