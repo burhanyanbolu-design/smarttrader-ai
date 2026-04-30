@@ -1,0 +1,15 @@
+[Unit]
+Description=Stock Trader - Trading Bot + Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/stocktrader
+Environment=PATH=/opt/stocktrader/venv/bin
+ExecStart=/opt/stocktrader/venv/bin/python app.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
