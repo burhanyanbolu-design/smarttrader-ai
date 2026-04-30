@@ -241,8 +241,148 @@ TEMPLATE = """
 </html>
 """
 
-@app.route("/")
-def index():
+@app.route("/status")
+def status_report():
+    """Full status report page"""
+    import subprocess
+
+    def run(cmd):
+        try:
+            return subprocess.check_output(cmd, shell=True, text=True, timeout=10).strip()
+        except Exception:
+            return "N/A"
+
+    # Learner stats
+    best_data  = _load(BEST_FILE, {"strategies": [], "updated_at": "never"})
+    all_strats = _load(STRATEGIES_FILE, {})
+    all_scores = _load(SCORES_FILE, {})
+    total      = len(all_strats)
+    high       = sum(1 for s in all_scores.values() if s >= 60)
+    best_score = max(all_scores.values()) if all_scores else 0
+
+    # Trade log
+    trades, pnl, wins, losses = [], 0, 0, 0
+    try:
+        with open("/opt/stocktrader/trade_log.jsonl") as f:
+            for line in f:
+                try:
+                    t = json.loads(line.strip())
+                    if t.get("pnl") is not None:
+                        trades.append(t)
+                        pnl += t["pnl"]
+                        if t["pnl"] > 0: wins += 1
+                        else: losses += 1
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # Service status
+    learner_status = run("systemctl is-active smarttrader")
+    trader_status  = run("systemctl is-active stocktrader 2>/dev/null || echo unknown")
+    dashboard_status = run("systemctl is-active dashboard")
+
+    logs = get_last_logs(30)
+    now  = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    STATUS_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head>
+  <title>SmartTrader-AI — Status Report</title>
+  <meta charset="UTF-8">
+  <meta http-equiv="refresh" content="30">
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:#0d0d0d; color:#e8e8e8; font-family:'Courier New',monospace; padding:20px; }
+    h1 { color:#00ff88; margin-bottom:20px; }
+    h2 { color:#00ccff; margin:20px 0 10px; font-size:14px; letter-spacing:1px; }
+    .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:20px; }
+    .card { background:#161616; border:1px solid #222; border-radius:8px; padding:16px; }
+    .label { color:#666; font-size:11px; margin-bottom:6px; }
+    .value { font-size:24px; font-weight:bold; }
+    .green { color:#00ff88; } .red { color:#ff4455; } .yellow { color:#ffaa00; } .blue { color:#00ccff; }
+    .service { display:flex; align-items:center; gap:10px; padding:10px; background:#161616; border-radius:6px; margin-bottom:8px; }
+    .dot { width:10px; height:10px; border-radius:50%; }
+    .dot.active { background:#00ff88; } .dot.inactive { background:#ff4455; }
+    .logs { background:#0a0a0a; border:1px solid #222; border-radius:6px; padding:14px; height:200px; overflow-y:auto; font-size:11px; }
+    .log-line { padding:2px 0; border-bottom:1px solid #0f0f0f; }
+    .back { color:#00ff88; text-decoration:none; font-size:12px; }
+    table { width:100%; border-collapse:collapse; font-size:12px; }
+    th { color:#666; text-align:left; padding:8px; border-bottom:1px solid #222; font-size:11px; }
+    td { padding:8px; border-bottom:1px solid #111; }
+  </style>
+</head>
+<body>
+  <a class="back" href="/">← Back to Dashboard</a>
+  <h1 style="margin-top:16px;">📊 Full Status Report</h1>
+  <div style="color:#666;font-size:11px;">{{ now }} · auto-refresh 30s</div>
+
+  <h2>🔧 SERVICES</h2>
+  <div class="service">
+    <div class="dot {{ 'active' if learner == 'active' else 'inactive' }}"></div>
+    <span>Strategy Learner</span>
+    <span class="{{ 'green' if learner == 'active' else 'red' }}" style="margin-left:auto;">{{ learner.upper() }}</span>
+  </div>
+  <div class="service">
+    <div class="dot {{ 'active' if dashboard == 'active' else 'inactive' }}"></div>
+    <span>Web Dashboard</span>
+    <span class="{{ 'green' if dashboard == 'active' else 'red' }}" style="margin-left:auto;">{{ dashboard.upper() }}</span>
+  </div>
+  <div class="service">
+    <div class="dot {{ 'active' if trader == 'active' else 'inactive' }}"></div>
+    <span>Trading Bot</span>
+    <span class="{{ 'green' if trader == 'active' else 'red' }}" style="margin-left:auto;">{{ trader.upper() }}</span>
+  </div>
+
+  <h2>🤖 STRATEGY LEARNER</h2>
+  <div class="grid">
+    <div class="card"><div class="label">TOTAL DISCOVERED</div><div class="value blue">{{ total }}</div></div>
+    <div class="card"><div class="label">HIGH QUALITY (60+)</div><div class="value green">{{ high }}</div></div>
+    <div class="card"><div class="label">BEST SCORE</div><div class="value yellow">{{ best_score }}</div></div>
+  </div>
+
+  <h2>💹 TRADING RESULTS</h2>
+  <div class="grid">
+    <div class="card"><div class="label">TOTAL P&L</div>
+      <div class="value {{ 'green' if pnl >= 0 else 'red' }}">${{ "%.2f"|format(pnl) }}</div></div>
+    <div class="card"><div class="label">WINS</div><div class="value green">{{ wins }}</div></div>
+    <div class="card"><div class="label">LOSSES</div><div class="value red">{{ losses }}</div></div>
+  </div>
+
+  {% if trades %}
+  <h2>📋 RECENT TRADES</h2>
+  <table>
+    <tr><th>Date</th><th>Symbol</th><th>Action</th><th>Price</th><th>P&L</th></tr>
+    {% for t in trades[-10:]|reverse %}
+    <tr>
+      <td style="color:#666;">{{ t.date }} {{ t.time }}</td>
+      <td class="blue">{{ t.symbol }}</td>
+      <td class="{{ 'green' if t.action == 'BUY' else 'red' }}">{{ t.action }}</td>
+      <td>${{ t.price }}</td>
+      <td class="{{ 'green' if t.pnl >= 0 else 'red' }}">${{ "%.2f"|format(t.pnl) }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <h2>📋 LEARNER LOGS</h2>
+  <div class="logs">
+    {% for line in logs %}
+    <div class="log-line" style="color:{% if 'ERROR' in line %}#ff4455{% elif 'WARNING' in line %}#ffaa00{% elif 'Saved' in line or 'Exported' in line %}#00ff88{% else %}#00ccff{% endif %}">{{ line }}</div>
+    {% endfor %}
+  </div>
+</body>
+</html>
+"""
+    return render_template_string(STATUS_TEMPLATE,
+        now=now, total=total, high=high, best_score=best_score,
+        pnl=pnl, wins=wins, losses=losses, trades=trades,
+        learner=learner_status, trader=trader_status, dashboard=dashboard_status,
+        logs=logs)
+
+
+
     best_data = _load(BEST_FILE, {"strategies": []})
     best      = best_data.get("strategies", [])[:10]
 
