@@ -75,7 +75,7 @@ def get_learned_signal(bars: pd.DataFrame) -> dict:
     if bars is None or len(bars) < 30:
         return {"signal": "HOLD", "score": 0, "votes": 0, "source": "learned"}
 
-    strategies = _load_best_strategies(min_score=60, top_n=5)
+    strategies = _load_best_strategies(min_score=40, top_n=10)
     if not strategies:
         return {"signal": "HOLD", "score": 0, "votes": 0, "source": "learned"}
 
