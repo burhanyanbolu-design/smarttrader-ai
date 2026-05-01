@@ -1,0 +1,15 @@
+[Unit]
+Description=SmartTrader-AI Research Intelligence Engine
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/smarttrader
+Environment=PATH=/opt/smarttrader/venv/bin
+ExecStart=/opt/smarttrader/venv/bin/python research_intelligence.py --mode auto
+Restart=always
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
